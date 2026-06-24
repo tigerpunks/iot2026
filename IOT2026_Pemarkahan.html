@@ -75,6 +75,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .rank-table td{padding:9px 10px;border-bottom:1px solid #f0f4f8;color:#2d3748}
 .rank-table tr:last-child td{border-bottom:none}
 .rank-1 td{font-weight:700;color:#276749}
+.loading-bar{text-align:center;padding:20px;color:#718096;font-size:13px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);color:#fff;padding:11px 22px;border-radius:10px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:opacity 0.25s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.2)}
 .toast.show{opacity:1}
 .toast.ok{background:#276749}
@@ -103,9 +104,12 @@ const JS={hakim1:'H1',hakim2:'H2',hakim3:'H3',hakim4:'H4',hakim5:'H5',hakim6:'H6
 const GROUPS={rendah:Array.from({length:15},(_,i)=>({id:`ISR${String(i+1).padStart(3,'0')}`})),menengah:Array.from({length:15},(_,i)=>({id:`ISM${String(i+1).padStart(3,'0')}`}))};
 const CR={pameran:[{id:'stem',label:'Aplikasi pengetahuan STEM',max:10},{id:'poster',label:'Persembahan poster / infografik',max:5},{id:'keaslian',label:'Keaslian',max:5},{id:'kreativiti',label:'Kreativiti',max:5}],pembentangan:[{id:'penyampaian',label:'Kemahiran penyampaian',max:10},{id:'saintifik',label:'Kemahiran saintifik',max:5},{id:'interaksi',label:'Kemahiran interaksi & menjawab soalan',max:5},{id:'personaliti',label:'Personaliti keseluruhan',max:5}],laporan:[{id:'abstrak',label:'Abstrak',max:5},{id:'pengenalan',label:'Pengenalan & Sorotan Kajian (Literature Review)',max:5},{id:'metodologi',label:'Metodologi',max:5},{id:'hasil',label:'Hasil Kajian',max:5},{id:'perbincangan',label:'Perbincangan & Kesimpulan',max:5},{id:'rujukan',label:'Rujukan / Apendiks',max:5}],signifikan:[{id:'pemikiran',label:'Pemikiran saintifik / matlamat kejuruteraan',max:5},{id:'sumbangan',label:'Sumbangan / impak kepada pembangunan masyarakat',max:5},{id:'kesan',label:'Kesan kepada kualiti alam sekitar & masyarakat',max:5}],keistimewaan:[{id:'kolaborasi',label:'Kolaborasi',max:3,sp:'s3'},{id:'patent',label:'Patent / Daftar myIPO',max:2,sp:'s2'}]};
 const CL={pameran:'Pameran Projek / Prototaip (25%)',pembentangan:'Pembentangan (25%)',laporan:'Penulisan Laporan (30%)',signifikan:'Projek Signifikan (15%)',keistimewaan:'Keistimewaan Produk (5%)'};
+
 async function dbGet(){try{const r=await fetch(`${FB}/scores.json`);if(!r.ok)throw new Error();return await r.json()||{};}catch(e){const l=localStorage.getItem('iot2026');return l?JSON.parse(l):{};}}
 async function dbSet(d){try{const r=await fetch(`${FB}/scores.json`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});if(!r.ok)throw new Error();localStorage.setItem('iot2026',JSON.stringify(d));return true;}catch(e){localStorage.setItem('iot2026',JSON.stringify(d));return false;}}
-let S={user:null,adminCat:'rendah',scores:{},loginUser:'',loginErr:'',loading:false,lastSync:null,currentGroup:null};
+
+let S={user:null,adminCat:'rendah',scores:{},loginUser:'',loginErr:'',lastSync:null,currentGroup:null,adminReady:false};
+
 function getScore(j,g,c){return S.scores[j]?.[g]?.[c]??null}
 function setScore(j,g,c,v){if(!S.scores[j])S.scores[j]={};if(!S.scores[j][g])S.scores[j][g]={};S.scores[j][g][c]=v;}
 function calcTotal(s){let t=0;Object.values(CR).forEach(a=>a.forEach(c=>{const v=s?.[c.id];if(v!=null)t+=v;}));return t}
@@ -113,15 +117,80 @@ function isComplete(j,g){const s=S.scores[j]?.[g];if(!s)return false;return Obje
 function getAvg(g,judges){const done=judges.filter(j=>isComplete(j,g));if(!done.length)return null;return(done.reduce((s,j)=>s+calcTotal(S.scores[j]?.[g]||{}),0)/done.length).toFixed(1)}
 function liveTotal(){let t=0;Object.values(CR).forEach(a=>a.forEach(c=>{const v=getScore(S.user,S.currentGroup,c.id);if(v!=null)t+=v;}));return t}
 function toast(msg,type='ok'){const el=document.getElementById('toast');el.textContent=msg;el.className=`toast ${type} show`;setTimeout(()=>el.classList.remove('show'),2800);}
+
 function showList(){document.getElementById('scorePage').classList.remove('active');document.getElementById('appMain').style.display='';renderMain();}
 function showScore(gid){S.currentGroup=gid;document.getElementById('appMain').style.display='none';document.getElementById('scorePage').classList.add('active');document.getElementById('scoreTitle').textContent=gid;renderScoreBody();document.getElementById('scorePage').scrollTop=0;}
-function renderMain(){const app=document.getElementById('appMain');if(!S.user){app.innerHTML=renderLogin();bindLogin();return;}const u=USERS[S.user];app.innerHTML=u.role==='judge'?renderList(u):renderAdmin(u);bindMain();}
-function renderLogin(){return `<div class="login-wrap"><div><div class="logo-icon">🏆</div><div class="logo-title">Innovators of Tomorrow<br>2026</div><div class="logo-sub">Sistem Pemarkahan IOT Negeri</div></div><div><label class="form-lbl">Nama Pengguna</label><input class="form-inp" id="lu" type="text" placeholder="Contoh: hakim1" autocomplete="username" autocapitalize="none" value="${S.loginUser}"></div><div><label class="form-lbl">Kata Laluan</label><input class="form-inp" id="lp" type="password" placeholder="Masukkan kata laluan" autocomplete="current-password"></div>${S.loginErr?`<div class="err-box">⚠️ ${S.loginErr}</div>`:''}<button class="btn-login" id="btnLogin" ${S.loading?'disabled':''}>${S.loading?'Memuatkan...':'Log Masuk'}</button><div class="hint-box"><strong>Senarai Log Masuk:</strong><br>Hakim Sekolah Rendah: hakim1, hakim2, hakim3<br>Hakim Sekolah Menengah: hakim4, hakim5, hakim6<br>Pentadbir: ketua / pegawai</div></div>`;}
+
+function renderMain(){
+  const app=document.getElementById('appMain');
+  if(!S.user){app.innerHTML=renderLogin();bindLogin();return;}
+  const u=USERS[S.user];
+  app.innerHTML=u.role==='judge'?renderList(u):renderAdmin(u);
+  bindMain();
+}
+
+function renderLogin(){return `<div class="login-wrap"><div><div class="logo-icon">🏆</div><div class="logo-title">Innovators of Tomorrow<br>Challenge 2026</div><div class="logo-sub">Sistem Pemarkahan Peringkat Kebangsaan</div></div><div><label class="form-lbl">Nama Pengguna</label><input class="form-inp" id="lu" type="text" placeholder="Contoh: hakim1" autocomplete="username" autocapitalize="none" value="${S.loginUser}"></div><div><label class="form-lbl">Kata Laluan</label><input class="form-inp" id="lp" type="password" placeholder="Masukkan kata laluan" autocomplete="current-password"></div>${S.loginErr?`<div class="err-box">⚠️ ${S.loginErr}</div>`:''}<button class="btn-login" id="btnLogin">Log Masuk</button><div class="hint-box"><strong>Senarai Log Masuk:</strong><br>Hakim Sekolah Rendah: hakim1, hakim2, hakim3<br>Hakim Sekolah Menengah: hakim4, hakim5, hakim6<br>Pentadbir: ketua / pegawai</div></div>`;}
+
 function renderList(u){const groups=GROUPS[u.cat];const done=groups.filter(g=>isComplete(S.user,g.id)).length;let h=`<div class="hdr"><div><div class="hdr-title">${u.name}</div><div class="hdr-sub">Sekolah ${u.cat==='rendah'?'Rendah':'Menengah'} · IOT 2026</div></div><button class="btn-out" id="btnOut">Keluar</button></div><div class="page"><div class="stats-grid"><div class="stat-card"><div class="stat-n">${groups.length}</div><div class="stat-l">Jumlah Kumpulan</div></div><div class="stat-card"><div class="stat-n">${done}</div><div class="stat-l">Selesai Dinilai</div></div></div>`;groups.forEach(g=>{const isDone=isComplete(S.user,g.id);const tot=isDone?calcTotal(S.scores[S.user]?.[g.id]||{}):null;h+=`<div class="grp-card"><div class="grp-row" data-gid="${g.id}"><div><div class="grp-name">${g.id}</div><div class="grp-meta">${isDone?'Sudah dinilai — ketik untuk kemaskini':'Ketik untuk mula menilai'}</div></div><span class="badge ${isDone?'badge-done':'badge-pend'}">${isDone?tot+'/100':'Belum dinilai'}</span></div></div>`;});h+='</div>';return h;}
+
+function renderAdmin(u){
+  const cat=S.adminCat;const judges=cat==='rendah'?JR:JM;const groups=GROUPS[cat];
+  const withScores=groups.filter(g=>judges.some(j=>isComplete(j,g.id))).length;
+  const ranked=groups.map(g=>({id:g.id,avg:getAvg(g.id,judges)})).filter(g=>g.avg!==null).sort((a,b)=>parseFloat(b.avg)-parseFloat(a.avg));
+  let h=`<div class="hdr"><div><div class="hdr-title">${u.name}</div><div class="hdr-sub">Papan Pemantauan · IOT 2026</div></div><button class="btn-out" id="btnOut">Keluar</button></div><div class="page"><div class="cat-tabs"><div class="cat-tab${cat==='rendah'?' act':''}" data-cat="rendah">Sekolah Rendah</div><div class="cat-tab${cat==='menengah'?' act':''}" data-cat="menengah">Sekolah Menengah</div></div><div class="stats-grid"><div class="stat-card"><div class="stat-n">${groups.length}</div><div class="stat-l">Jumlah Kumpulan</div></div><div class="stat-card"><div class="stat-n">${withScores}</div><div class="stat-l">Ada Markah</div></div></div><div class="refresh-bar"><span class="refresh-txt">Kemaskini: ${S.lastSync?S.lastSync.toLocaleTimeString('ms-MY'):'Tekan Muat Semula'}</span><button class="btn-refresh" id="btnRefresh">🔄 Muat Semula</button></div>`;
+  if(!S.adminReady){h+=`<div class="loading-bar">⏳ Tekan Muat Semula untuk dapatkan markah terkini</div>`;}
+  if(ranked.length>0){h+=`<div class="adm-card" style="margin-bottom:14px"><div style="font-size:15px;font-weight:700;color:#2d3748;margin-bottom:8px">📊 Kedudukan Semasa</div><table class="rank-table"><thead><tr><th>#</th><th>Kumpulan</th><th>Purata</th><th>Hakim</th></tr></thead><tbody>`;ranked.forEach((g,i)=>{const dj=judges.filter(j=>isComplete(j,g.id)).length;h+=`<tr class="${i===0?'rank-1':''}"><td>${i+1}</td><td>${g.id}</td><td><strong>${g.avg}</strong>/100</td><td>${dj}/${judges.length}</td></tr>`;});h+='</tbody></table></div>';}
+  groups.forEach(g=>{const avg=getAvg(g.id,judges);h+=`<div class="adm-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><div><div style="font-size:15px;font-weight:700;color:#2d3748">${g.id}</div><div style="font-size:12px;color:#718096;margin-top:2px">Sekolah ${cat==='rendah'?'Rendah':'Menengah'}</div></div><div style="text-align:right;flex-shrink:0"><div class="avg-big">${avg??'—'}</div><div class="avg-lbl">Purata / 100</div></div></div><div class="pills">`;judges.forEach(j=>{const isDone=isComplete(j,g.id);const sc=isDone?calcTotal(S.scores[j]?.[g.id]||{}):null;h+=`<span class="pill ${isDone?'pill-done':'pill-pend'}">${JS[j]}: ${isDone?sc:'—'}</span>`;});h+='</div></div>';});
+  h+='</div>';return h;
+}
+
 function renderScoreBody(){const gid=S.currentGroup;let h='';Object.entries(CR).forEach(([comp,crits])=>{h+=`<div class="comp-hdr">${CL[comp]}</div>`;crits.forEach(c=>{const val=getScore(S.user,gid,c.id);h+=`<div class="crit-row"><div class="crit-lbl">${c.label}</div><div class="score-sel" data-crit="${c.id}">`;if(c.sp==='s3'){[1,2,3].forEach(v=>h+=`<button class="sb${val===v?' sel':''}" data-val="${v}">${v}</button>`);}else if(c.sp==='s2'){[0,2].forEach(v=>h+=`<button class="sb${val===v?' sel':''}" data-val="${v}">${v}</button>`);}else{for(let v=1;v<=c.max;v++)h+=`<button class="sb${val===v?' sel':''}" data-val="${v}">${v}</button>`;}h+='</div></div>';});});const tot=liveTotal();h+=`<div class="total-row"><span class="total-lbl">JUMLAH MARKAH</span><span class="total-val" id="liveTotal">${tot}/100</span></div><button class="btn-save" id="btnSave">💾 Simpan Markah</button>`;document.getElementById('scoreBody').innerHTML=h;document.getElementById('scoreLiveTotal').textContent=tot+'/100';bindScoreButtons();}
+
 function bindScoreButtons(){const gid=S.currentGroup;document.querySelectorAll('#scoreBody .score-sel').forEach(sel=>{sel.querySelectorAll('[data-val]').forEach(btn=>{btn.addEventListener('click',()=>{const cid=sel.getAttribute('data-crit');const val=parseInt(btn.getAttribute('data-val'));setScore(S.user,gid,cid,val);sel.querySelectorAll('[data-val]').forEach(b=>b.classList.remove('sel'));btn.classList.add('sel');const tot=liveTotal();const el=document.getElementById('liveTotal');if(el)el.textContent=tot+'/100';document.getElementById('scoreLiveTotal').textContent=tot+'/100';});});});document.getElementById('btnSave')?.addEventListener('click',async()=>{if(!isComplete(S.user,gid)){toast('⚠️ Sila lengkapkan semua kriteria terlebih dahulu.','err');return;}const btn=document.getElementById('btnSave');btn.disabled=true;btn.textContent='Menyimpan...';const ok=await dbSet(S.scores);if(ok){toast('✅ Markah berjaya disimpan!','ok');setTimeout(()=>showList(),1200);}else{btn.disabled=false;btn.textContent='💾 Simpan Markah';toast('❌ Gagal simpan. Semak WiFi.','err');}});}
-function bindLogin(){const doLogin=async()=>{const u=document.getElementById('lu').value.trim().toLowerCase();const p=document.getElementById('lp').value.trim();S.loginUser=u;if(USERS[u]&&USERS[u].pw===p){S.loading=true;renderMain();S.scores=await dbGet();S.user=u;S.loginErr='';S.loginUser='';S.loading=false;S.lastSync=new Date();renderMain();}else{S.loginErr='Nama pengguna atau kata laluan tidak sah.';renderMain();}};document.getElementById('btnLogin')?.addEventListener('click',doLogin);document.getElementById('lu')?.addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('lp')?.focus();});document.getElementById('lp')?.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});}
-function bindMain(){document.getElementById('btnOut')?.addEventListener('click',()=>{S.user=null;renderMain();});document.querySelectorAll('[data-gid]').forEach(el=>{el.addEventListener('click',()=>showScore(el.getAttribute('data-gid')));});document.querySelectorAll('[data-cat]').forEach(tab=>{tab.addEventListener('click',()=>{S.adminCat=tab.getAttribute('data-cat');renderMain();});});document.getElementById('btnRefresh')?.addEventListener('click',async()=>{const btn=document.getElementById('btnRefresh');btn.textContent='Memuatkan...';S.scores=await dbGet();S.lastSync=new Date();renderMain();toast('✅ Data dikemaskini','ok');});}
+
+function bindLogin(){
+  const doLogin=()=>{
+    const u=document.getElementById('lu').value.trim().toLowerCase();
+    const p=document.getElementById('lp').value.trim();
+    S.loginUser=u;
+    if(USERS[u]&&USERS[u].pw===p){
+      // Login terus tanpa tunggu Firebase
+      S.user=u;S.loginErr='';S.loginUser='';S.adminReady=false;
+      renderMain();
+      // Load markah di belakang
+      const role=USERS[u].role;
+      dbGet().then(data=>{
+        S.scores=data;S.lastSync=new Date();
+        if(role==='judge'){
+          // Update senarai secara senyap
+          renderMain();
+        }else{
+          S.adminReady=true;
+          renderMain();
+        }
+      });
+    }else{S.loginErr='Nama pengguna atau kata laluan tidak sah.';renderMain();}
+  };
+  document.getElementById('btnLogin')?.addEventListener('click',doLogin);
+  document.getElementById('lu')?.addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('lp')?.focus();});
+  document.getElementById('lp')?.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+}
+
+function bindMain(){
+  document.getElementById('btnOut')?.addEventListener('click',()=>{S.user=null;S.adminReady=false;renderMain();});
+  document.querySelectorAll('[data-gid]').forEach(el=>{el.addEventListener('click',()=>showScore(el.getAttribute('data-gid')));});
+  document.querySelectorAll('[data-cat]').forEach(tab=>{tab.addEventListener('click',()=>{S.adminCat=tab.getAttribute('data-cat');renderMain();});});
+  document.getElementById('btnRefresh')?.addEventListener('click',async()=>{
+    const btn=document.getElementById('btnRefresh');
+    btn.textContent='Memuatkan...';
+    S.scores=await dbGet();
+    S.lastSync=new Date();
+    S.adminReady=true;
+    renderMain();
+    toast('✅ Data dikemaskini','ok');
+  });
+}
+
 document.getElementById('btnBack').addEventListener('click',()=>showList());
 renderMain();
 </script>
